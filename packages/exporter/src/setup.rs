@@ -179,6 +179,12 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
 
     lazy_static! {
         static ref IMG_REGEX: Regex = Regex::new(r#""([^"]+?\.png)""#).unwrap();
+        // A Factorio mod namespace (`__base__`, `__core__`, `__space-age__`,
+        // `__quality__`, `__recycler__`, `__elevated-rails__`, ...) maps to a
+        // sibling directory under `data/` named after the mod. Upstream only
+        // rewrote `__base__`/`__core__`; Space Age (2.1.x, and 2.0.x Space Age)
+        // references DLC mod namespaces too, so rewrite them all generically.
+        static ref MOD_NS_REGEX: Regex = Regex::new(r"__([a-z0-9_-]+)__").unwrap();
     }
     let file_paths: HashSet<String> = IMG_REGEX
         .captures_iter(&content)
@@ -188,8 +194,10 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
     let file_paths = file_paths
         .into_iter()
         .map(|s| {
-            let in_path =
-                factorio_data.join(s.replace("__core__", "core").replace("__base__", "base"));
+            // Source sprite lives under data/<mod>/... (un-namespaced on disk);
+            // the atlas output keeps the `__mod__/...` namespace so the render
+            // side's identity lookup (`<path>.png -> /data/<path>.basis`) resolves.
+            let in_path = factorio_data.join(MOD_NS_REGEX.replace_all(&s, "$1").as_ref());
             let out_path = output_dir.join(s.replace(".png", ".basis").as_str());
             (in_path, out_path)
         })
