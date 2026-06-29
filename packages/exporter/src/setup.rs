@@ -154,6 +154,12 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
 
     println!("Generating defines.lua");
 
+    // The exit STATUS is intentionally not checked: the export-data scenario writes data.json
+    // and then calls `error("!EXIT!")` to tear down the headless server, so Factorio always
+    // exits NON-ZERO on a successful export. Success is therefore gated on data.json existing
+    // (the read below), not on the exit code. `.await?` still propagates a real spawn/wait I/O
+    // error. If the read fails, Factorio's own `factorio-current.log` has the cause (the
+    // container entrypoint dumps it on early exit).
     Command::new(factorio_executable)
         .args(&["--start-server-load-scenario", "export-data/export-data"])
         .stdout(std::process::Stdio::null())
@@ -184,7 +190,11 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
         // sibling directory under `data/` named after the mod. Upstream only
         // rewrote `__base__`/`__core__`; Space Age (2.1.x, and 2.0.x Space Age)
         // references DLC mod namespaces too, so rewrite them all generically.
-        static ref MOD_NS_REGEX: Regex = Regex::new(r"__([a-z0-9_-]+)__").unwrap();
+        // Anchored to the LEADING `__mod__/` only (a namespace is always the
+        // path prefix) so an incidental mid-path `__x__` segment is left intact,
+        // and the class allows uppercase since mod internal names legally do
+        // (e.g. `Krastorio2`).
+        static ref MOD_NS_REGEX: Regex = Regex::new(r"^__([A-Za-z0-9_-]+)__/").unwrap();
     }
     let file_paths: HashSet<String> = IMG_REGEX
         .captures_iter(&content)
@@ -197,7 +207,7 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
             // Source sprite lives under data/<mod>/... (un-namespaced on disk);
             // the atlas output keeps the `__mod__/...` namespace so the render
             // side's identity lookup (`<path>.png -> /data/<path>.basis`) resolves.
-            let in_path = factorio_data.join(MOD_NS_REGEX.replace_all(&s, "$1").as_ref());
+            let in_path = factorio_data.join(MOD_NS_REGEX.replace(&s, "$1/").as_ref());
             let out_path = output_dir.join(s.replace(".png", ".basis").as_str());
             (in_path, out_path)
         })

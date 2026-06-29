@@ -61,7 +61,10 @@ local locale = require('locale')
 
 local function localise(obj, typeArg)
     local function localiseTemplate(t)
-        local template = locale[t[1]]
+        -- Guard a missing top-level key: locale[t[1]] is nil if the key is absent (or t[1] is a
+        -- nested table), which would crash the subsequent template:gsub. Names/descriptions are
+        -- cosmetic for a sprite-only render, so degrade to '' rather than fail the whole export.
+        local template = locale[t[1]] or ''
         local args = t[2]
         if type(args) == "string" then
             template = template:gsub('__1__', args)
