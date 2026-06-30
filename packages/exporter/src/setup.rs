@@ -3,7 +3,6 @@ use globset::{GlobBuilder, GlobMatcher};
 use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use serde::Deserialize;
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -32,45 +31,6 @@ async fn get_info(path: &Path) -> Result<Info, Box<dyn Error>> {
     let contents = tokio::fs::read_to_string(path).await?;
     let p: Info = serde_json::from_str(&contents)?;
     Ok(p)
-}
-
-// Retained for reference only — no longer called. POT padding was a browser-WebGL1 requirement
-// (REPEAT-wrap + mipmaps need power-of-two textures); our headless render path doesn't use it, and it
-// was the cause of the 8192² compression OOM. See the call site in compress_next_img.
-#[allow(dead_code)]
-#[allow(clippy::needless_lifetimes)]
-async fn make_img_pow2<'a>(
-    path: &'a Path,
-    tmp_dir: &Path,
-) -> Result<Cow<'a, Path>, Box<dyn Error>> {
-    let (w, h) = image::image_dimensions(path)?;
-    let w_log = f32::log2(w as f32);
-    let h_log = f32::log2(h as f32);
-
-    if w_log.fract() != 0.0 || h_log.fract() != 0.0 {
-        let mut file = tokio::fs::File::open(path).await?;
-        let len = file.metadata().await?.len();
-        let mut buffer = Vec::with_capacity(len as usize);
-        use tokio::io::AsyncReadExt;
-        file.read_to_end(&mut buffer).await?;
-        let format = image::guess_format(&buffer)?;
-        let mut out = image::DynamicImage::new_rgba8(
-            u32::pow(2, f32::ceil(w_log) as u32),
-            u32::pow(2, f32::ceil(h_log) as u32),
-        );
-        let img = image::load_from_memory_with_format(&buffer, format)?;
-        image::imageops::replace(&mut out, &img, 0, 0);
-        buffer.clear();
-        let mut buffer = std::io::Cursor::new(buffer);
-        out.write_to(&mut buffer, format)?;
-
-        let tmp_path = tmp_dir.join(path);
-        tokio::fs::create_dir_all(tmp_path.parent().unwrap()).await?;
-        tokio::fs::write(&tmp_path, &buffer.into_inner()).await?;
-        Ok(Cow::Owned(tmp_path))
-    } else {
-        Ok(Cow::Borrowed(path))
-    }
 }
 
 async fn content_to_lines(path: &Path) -> Result<String, Box<dyn Error>> {
@@ -226,15 +186,12 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
 
     let file_paths = Arc::new(Mutex::new(file_paths));
 
-    let tmp_dir = std::env::temp_dir().join("__FBE__");
-    tokio::fs::create_dir_all(&tmp_dir).await?;
-
-    // Concurrent sprite-compression jobs. Each basisu job on a large (8192²-padded) sprite holds a
-    // ~268 MB working set, so unbounded host-CPU parallelism can exhaust container memory and have
-    // basisu silently fail on some sprites. Cap at EXPORT_MAX_JOBS (the container entrypoint derives
-    // a memory-safe value) so the bound travels with the image instead of an operator `--cpus` flag.
-    // Default = host parallelism for local/non-container runs; an explicit value is min'd with the
-    // host count so it never oversubscribes cores.
+    // Concurrent sprite-compression jobs. Each basisu job decodes a native sprite to RGBA and builds
+    // its compression working set, so unbounded host-CPU parallelism can exhaust container memory and
+    // have basisu silently fail on some sprites. Cap at EXPORT_MAX_JOBS (the container entrypoint
+    // derives a memory-safe value) so the bound travels with the image instead of an operator
+    // `--cpus` flag. Default = host parallelism for local/non-container runs; an explicit value is
+    // min'd with the host count so it never oversubscribes cores.
     let host_parallelism = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
     let max_jobs = std::env::var("EXPORT_MAX_JOBS")
         .ok()
@@ -245,7 +202,6 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
     futures::future::try_join_all((0..max_jobs).map(|_| {
         compress_next_img(
             file_paths.clone(),
-            &tmp_dir,
             progress.clone(),
             &old_metadata,
             new_metadata.clone(),
@@ -261,7 +217,6 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
 
     progress.finish();
 
-    tokio::fs::remove_dir_all(&tmp_dir).await?;
     println!("DONE!");
 
     Ok(())
@@ -281,7 +236,6 @@ async fn get_len_and_mtime(path: &Path) -> Result<(u64, u64), Box<dyn Error>> {
 
 async fn compress_next_img(
     file_paths: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
-    _tmp_dir: &Path,
     progress: ProgressBar,
     old_metadata: &HashMap<String, (u64, u64)>,
     new_metadata: Arc<Mutex<HashMap<String, (u64, u64)>>>,
@@ -311,7 +265,8 @@ async fn compress_next_img(
                 // .args(&["-comp_level", "2"])
                 .args(&["-no_multithreading"])
                 // .args(&["-ktx2"])
-                .args(&["-mipmap"])
+                // No -mipmap: the headless renderer transcodes only level 0 (decodeBasis reads
+                // image 0 / mip 0), so a mip chain is wasted compression time + larger .basis output.
                 .args(&["-file", path.to_str().ok_or("PathBuf to &str failed")?])
                 .args(&[
                     "-output_file",
