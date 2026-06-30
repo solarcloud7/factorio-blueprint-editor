@@ -34,6 +34,10 @@ async fn get_info(path: &Path) -> Result<Info, Box<dyn Error>> {
     Ok(p)
 }
 
+// Retained for reference only — no longer called. POT padding was a browser-WebGL1 requirement
+// (REPEAT-wrap + mipmaps need power-of-two textures); our headless render path doesn't use it, and it
+// was the cause of the 8192² compression OOM. See the call site in compress_next_img.
+#[allow(dead_code)]
 #[allow(clippy::needless_lifetimes)]
 async fn make_img_pow2<'a>(
     path: &'a Path,
@@ -225,10 +229,20 @@ pub async fn extract(output_dir: &Path, base_factorio_dir: &Path) -> Result<(), 
     let tmp_dir = std::env::temp_dir().join("__FBE__");
     tokio::fs::create_dir_all(&tmp_dir).await?;
 
-    let available_parallelism =
-        std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    // Concurrent sprite-compression jobs. Each basisu job on a large (8192²-padded) sprite holds a
+    // ~268 MB working set, so unbounded host-CPU parallelism can exhaust container memory and have
+    // basisu silently fail on some sprites. Cap at EXPORT_MAX_JOBS (the container entrypoint derives
+    // a memory-safe value) so the bound travels with the image instead of an operator `--cpus` flag.
+    // Default = host parallelism for local/non-container runs; an explicit value is min'd with the
+    // host count so it never oversubscribes cores.
+    let host_parallelism = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    let max_jobs = std::env::var("EXPORT_MAX_JOBS")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .map_or(host_parallelism, |n| n.min(host_parallelism));
 
-    futures::future::try_join_all((0..available_parallelism).map(|_| {
+    futures::future::try_join_all((0..max_jobs).map(|_| {
         compress_next_img(
             file_paths.clone(),
             &tmp_dir,
@@ -267,7 +281,7 @@ async fn get_len_and_mtime(path: &Path) -> Result<(u64, u64), Box<dyn Error>> {
 
 async fn compress_next_img(
     file_paths: Arc<Mutex<Vec<(PathBuf, PathBuf)>>>,
-    tmp_dir: &Path,
+    _tmp_dir: &Path,
     progress: ProgressBar,
     old_metadata: &HashMap<String, (u64, u64)>,
     new_metadata: Arc<Mutex<HashMap<String, (u64, u64)>>>,
@@ -283,7 +297,12 @@ async fn compress_next_img(
                 .unwrap()
                 .insert(key.to_string(), (len, mtime));
         } else {
-            let path = make_img_pow2(&in_path, tmp_dir).await?;
+            // NPOT padding removed: basisu handles non-pow2 natively (it does its own 4-pixel block
+            // padding internally), and our HEADLESS renderer never uses REPEAT-wrap/mipmaps on sprites
+            // (that was a browser-WebGL1 requirement — `Editor.init` is never run headless). So the old
+            // make_img_pow2 pad-to-next-POT (e.g. 4608x6144 -> 8192x8192, a 268 MB buffer) was pure dead
+            // weight and the source of the compression OOM. Feed basisu the native sprite directly.
+            let path: &Path = &in_path;
 
             tokio::fs::create_dir_all(out_path.parent().unwrap()).await?;
 
