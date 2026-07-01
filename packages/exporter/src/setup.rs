@@ -265,8 +265,11 @@ async fn compress_next_img(
                 // .args(&["-comp_level", "2"])
                 .args(&["-no_multithreading"])
                 // .args(&["-ktx2"])
-                // No -mipmap: the headless renderer transcodes only level 0 (decodeBasis reads
-                // image 0 / mip 0), so a mip chain is wasted compression time + larger .basis output.
+                // -mipmap is REQUIRED even though the renderer reads only mip 0: basis_universal
+                // encodes mip-0-only files in a layout our decodeBasis path mis-samples (every
+                // sprite comes out wrong-colored and offset — the June 2026 atlas regression).
+                // Dropping it "for size" costs correctness; a mipless atlas renders corrupt.
+                .args(&["-mipmap"])
                 .args(&["-file", path.to_str().ok_or("PathBuf to &str failed")?])
                 .args(&[
                     "-output_file",
