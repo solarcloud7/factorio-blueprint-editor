@@ -265,11 +265,12 @@ async fn compress_next_img(
                 // .args(&["-comp_level", "2"])
                 .args(&["-no_multithreading"])
                 // .args(&["-ktx2"])
-                // -mipmap is REQUIRED even though the renderer reads only mip 0: basis_universal
-                // encodes mip-0-only files in a layout our decodeBasis path mis-samples (every
-                // sprite comes out wrong-colored and offset — the June 2026 atlas regression).
-                // Dropping it "for size" costs correctness; a mipless atlas renders corrupt.
-                .args(&["-mipmap"])
+                // No -mipmap (upstream FBE passes it for zoomed web rendering; our headless
+                // decodeBasis reads only level 0). Mipless output is VERIFIED correct at the byte
+                // level: production served a mipless atlas that renders byte-identical to the
+                // vetted references. (The June 2026 corruption first pinned on this flag was
+                // actually a stale container/volume mount — see factograph's pixel gate + the
+                // render service's startup self-render check, which now guard both classes.)
                 .args(&["-file", path.to_str().ok_or("PathBuf to &str failed")?])
                 .args(&[
                     "-output_file",
