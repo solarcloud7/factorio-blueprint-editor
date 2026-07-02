@@ -112,6 +112,40 @@ export class EntitySprite extends Sprite {
         position?: IPoint,
         positionGrid?: PositionGrid
     ): EntitySprite[] {
+        try {
+            return EntitySprite.getPartsUnsafe(entity, position, positionGrid)
+        } catch (err) {
+            // Degrade, don't die: entities without a sprite generator (e.g. new Space Age
+            // types missing from spriteDataBuilder) render as a translucent placeholder box
+            // of the entity's footprint instead of failing the whole blueprint render.
+            console.error(
+                `FBE: sprite generation failed for '${entity.name}' — placeholder rendered (${
+                    (err as Error).message
+                })`
+            )
+            return [EntitySprite.placeholder(entity, position)]
+        }
+    }
+
+    private static placeholder(entity: IEntityData | Entity, position?: IPoint): EntitySprite {
+        const size: IPoint = entity instanceof Entity ? entity.size : { x: 1, y: 1 }
+        const sprite = new EntitySprite(
+            Texture.WHITE,
+            { filename: '__placeholder__' } as unknown as ExtendedSpriteData,
+            position
+        )
+        sprite.width = size.x * 32
+        sprite.height = size.y * 32
+        sprite.alpha = 0.45
+        sprite.tint = 0xff5555
+        return sprite
+    }
+
+    private static getPartsUnsafe(
+        entity: IEntityData | Entity,
+        position?: IPoint,
+        positionGrid?: PositionGrid
+    ): EntitySprite[] {
         const spriteData = getSpriteData({
             dir: entity.direction,
 
@@ -139,8 +173,13 @@ export class EntitySprite extends Sprite {
             if (!data) continue
             if (data.draw_as_shadow) continue
 
+            // Some 2.0 animations split frames across multiple files (`filenames`);
+            // frame 0 lives in file 0 (e.g. foundry anim layer, thruster body).
+            const filename = data.filename ?? (data as any).filenames?.[0]
+            if (!filename) continue
+
             const texture = G.getTexture(
-                data.filename,
+                filename,
                 data.x,
                 data.y,
                 data.width || (Array.isArray(data.size) ? data.size[0] : data.size),
@@ -148,7 +187,7 @@ export class EntitySprite extends Sprite {
             )
             const sprite = new EntitySprite(texture, data, position)
 
-            if (data.filename.includes('circuit-connector')) {
+            if (filename.includes('circuit-connector')) {
                 sprite.__zIndex = 1
             } else if (entity.type === 'artillery-turret' && i > 0) {
                 sprite.__zIndex = 2

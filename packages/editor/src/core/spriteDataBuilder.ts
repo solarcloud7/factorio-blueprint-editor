@@ -257,7 +257,8 @@ function generateCovers(e: EntityWithOwnerPrototype, data: IDrawData): readonly 
             }
 
             let needs_cover = force_cover || !isConnected()
-            if (needs_cover) {
+            // Some fluid boxes define no pipe_covers (e.g. fusion reactor/generator, thruster).
+            if (needs_cover && fb.pipe_covers) {
                 let temp = fb.pipe_covers[util.getDirName(dir)].layers[0]
                 temp = addToShift(offset, util.duplicate(temp))
                 output.push(temp)
@@ -824,14 +825,50 @@ function draw_accumulator(e: AccumulatorPrototype): (data: IDrawData) => readonl
 function draw_agricultural_tower(
     e: AgriculturalTowerPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return () => (e.graphics_set as any).animation.layers
 }
 function draw_ammo_turret(e: AmmoTurretPrototype): (data: IDrawData) => readonly SpriteData[] {
-    return (data: IDrawData) => [
-        ...e.graphics_set.base_visualisation.animation.layers,
-        duplicateAndSetPropertyUsing(e.folded_animation.layers[0], 'y', 'height', data.dir / 4),
-        duplicateAndSetPropertyUsing(e.folded_animation.layers[1], 'y', 'height', data.dir / 4),
-    ]
+    return (data: IDrawData) => {
+        const bv = e.graphics_set.base_visualisation as any
+        if (!Array.isArray(bv) && bv.animation.layers) {
+            // Flat base animation + direction-row head sheets (gun/rocket turret).
+            return [
+                ...bv.animation.layers,
+                duplicateAndSetPropertyUsing(
+                    e.folded_animation.layers[0],
+                    'y',
+                    'height',
+                    data.dir / 4
+                ),
+                duplicateAndSetPropertyUsing(
+                    e.folded_animation.layers[1],
+                    'y',
+                    'height',
+                    data.dir / 4
+                ),
+            ]
+        }
+        // Direction-keyed variants (Space Age railgun-turret: 8-way base + folded animations).
+        return drawGenericTurret(bv, e.folded_animation as any, data.dir)
+    }
+}
+// Shared fallback for turrets whose base_visualisation is an array (tesla) and/or whose
+// animations are direction-keyed (railgun) rather than flat direction-row sheets.
+function drawGenericTurret(bv: any, folded: any, dir: number): SpriteData[] {
+    const bases: SpriteData[] = (Array.isArray(bv) ? bv : [bv]).flatMap((b: any) => {
+        const anim = getAnimation(b.animation, dir) as any
+        return anim.layers ?? [anim]
+    })
+    const fa = getAnimation(folded, dir) as any
+    const heads: SpriteData[] = ((fa.layers ?? [fa]) as any[])
+        .filter(l => !l.draw_as_shadow)
+        .map(l => {
+            const dc = l.direction_count ?? 1
+            return dc > 1
+                ? duplicateAndSetPropertyUsing(l, 'y', 'height', Math.floor((dir * dc) / 16))
+                : l
+        })
+    return [...bases, ...heads]
 }
 function draw_arithmetic_combinator(
     e: ArithmeticCombinatorPrototype
@@ -934,11 +971,13 @@ function draw_assembling_machine(
                         continue
 
                     const dir = (data.dir + conn.direction) % 16
+                    // pipe_picture is either a Sprite4Way ({north,east,...}) or one flat sprite
+                    // used for all directions (Space Age foundry).
+                    const pp = fb.pipe_picture as any
+                    const pic = pp.filename ? pp : pp[util.getDirName(dir)]
+                    if (!pic) continue
                     out.push(
-                        addToShift(
-                            util.rotatePointBasedOnDir([0, -2], dir),
-                            util.duplicate(fb.pipe_picture[util.getDirName(dir)])
-                        )
+                        addToShift(util.rotatePointBasedOnDir([0, -2], dir), util.duplicate(pic))
                     )
                 }
             }
@@ -950,7 +989,14 @@ function draw_assembling_machine(
 function draw_asteroid_collector(
     e: AsteroidCollectorPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return (data: IDrawData) => {
+        const gs = e.graphics_set as any
+        return [
+            ...(gs.below_ground_pictures?.layers ?? []),
+            ...(gs.below_arm_pictures?.layers ?? []),
+            ...getAnimation(gs.animation, data.dir).layers,
+        ]
+    }
 }
 function draw_beacon(e: BeaconPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => {
@@ -1030,7 +1076,8 @@ function draw_burner_generator(
     throw new Error('Not implemented!')
 }
 function draw_cargo_bay(e: CargoBayPrototype): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // picture is an array of layered sprites (base + planet body + occluder).
+    return () => (e.graphics_set as any).picture.flatMap((p: any) => p.layers ?? [p])
 }
 function draw_cargo_landing_pad(
     e: CargoLandingPadPrototype
@@ -1127,31 +1174,51 @@ function draw_electric_pole(e: ElectricPolePrototype): (data: IDrawData) => read
 function draw_electric_turret(
     e: ElectricTurretPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    return (data: IDrawData) => [
-        ...e.graphics_set.base_visualisation.animation.layers,
-        duplicateAndSetPropertyUsing(e.folded_animation.layers[0], 'y', 'height', data.dir / 4),
-        duplicateAndSetPropertyUsing(e.folded_animation.layers[2], 'y', 'height', data.dir / 4),
-    ]
+    return (data: IDrawData) => {
+        const bv = e.graphics_set.base_visualisation as any
+        if (!Array.isArray(bv) && bv.animation.layers) {
+            // Flat base animation + direction-row head sheets (laser turret).
+            return [
+                ...bv.animation.layers,
+                duplicateAndSetPropertyUsing(
+                    e.folded_animation.layers[0],
+                    'y',
+                    'height',
+                    data.dir / 4
+                ),
+                duplicateAndSetPropertyUsing(
+                    e.folded_animation.layers[2],
+                    'y',
+                    'height',
+                    data.dir / 4
+                ),
+            ]
+        }
+        // Array base_visualisation (Space Age tesla-turret).
+        return drawGenericTurret(bv, e.folded_animation as any, data.dir)
+    }
 }
+// Elevated rails share the RailPrototype 16-way `pictures` structure — reuse the ground-rail
+// drawing. (Height offset/supports are separate entities; the rail piece itself draws the same.)
 function draw_elevated_curved_rail_a(
     e: ElevatedCurvedRailAPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return draw_rail(e as unknown as RailPrototype)
 }
 function draw_elevated_curved_rail_b(
     e: ElevatedCurvedRailBPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return draw_rail(e as unknown as RailPrototype)
 }
 function draw_elevated_half_diagonal_rail(
     e: ElevatedHalfDiagonalRailPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return draw_rail(e as unknown as RailPrototype)
 }
 function draw_elevated_straight_rail(
     e: ElevatedStraightRailPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return draw_straight_rail(e as unknown as RailPrototype)
 }
 function draw_fluid_turret(e: FluidTurretPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => [
@@ -1163,17 +1230,25 @@ function draw_fluid_wagon(e: FluidWagonPrototype): (data: IDrawData) => readonly
     throw new Error('Not implemented!')
 }
 function draw_furnace(e: FurnacePrototype): (data: IDrawData) => readonly SpriteData[] {
-    return () => e.graphics_set.animation.layers
+    // animation is a flat Animation (stone/steel/electric furnace) or an Animation4Way
+    // (Space Age recycler); getAnimation handles both.
+    return (data: IDrawData) =>
+        getAnimation(e.graphics_set.animation as Animation4Way, data.dir).layers
 }
 function draw_fusion_generator(
     e: FusionGeneratorPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Per-direction graphics sets: north_graphics_set / east_ / south_ / west_.
+    return (data: IDrawData) => {
+        const gs = e.graphics_set as any
+        return gs[`${util.getDirName(data.dir)}_graphics_set`].animation.layers
+    }
 }
 function draw_fusion_reactor(
     e: FusionReactorPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Static structure; connection pieces are runtime-neighbor dependent — skipped.
+    return () => (e.graphics_set as any).structure.layers
 }
 function draw_gate(e: GatePrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => {
@@ -1495,7 +1570,8 @@ function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly Spr
 function draw_lightning_attractor(
     e: LightningAttractorPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Same shape as accumulator: chargable_graphics.picture (lightning-rod / -collector).
+    return () => (e.chargable_graphics.picture as any).layers
 }
 function draw_linked_belt(e: LinkedBeltPrototype): (data: IDrawData) => readonly SpriteData[] {
     throw new Error('Not implemented!')
@@ -1687,7 +1763,11 @@ function draw_radar(e: RadarPrototype): (data: IDrawData) => readonly SpriteData
     return () => e.pictures.layers
 }
 function draw_rail_ramp(e: RailRampPrototype): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Same piece stack/order as draw_rail; ramps only have the stone/ties pieces.
+    return (data: IDrawData) => {
+        const ps = (e.pictures as any)[util.getDirName8Way(data.dir)]
+        return [ps.stone_path_background, ps.stone_path, ps.ties].filter(Boolean)
+    }
 }
 function draw_rail_signal_base(
     e: RailSignalBasePrototype
@@ -1718,7 +1798,7 @@ function draw_rail_signal_base(
     }
 }
 function draw_rail_support(e: RailSupportPrototype): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    return () => (e.graphics_set as any).structure.layers
 }
 function draw_reactor(e: ReactorPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => {
@@ -1800,7 +1880,8 @@ function draw_solar_panel(e: SolarPanelPrototype): (data: IDrawData) => readonly
 function draw_space_platform_hub(
     e: SpacePlatformHubPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // picture is an array of layered sprites (hub body pieces + hatch occluders).
+    return () => (e.graphics_set as any).picture.flatMap((p: any) => p.layers ?? [p])
 }
 function draw_splitter(e: SplitterPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => {
@@ -1843,7 +1924,13 @@ function draw_storage_tank(e: StorageTankPrototype): (data: IDrawData) => readon
     ]
 }
 function draw_thruster(e: ThrusterPrototype): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Body animation frames are split across multiple files (`filenames`); frame 0 is in file 0.
+    return () => {
+        const gs = e.graphics_set as any
+        const body = { ...gs.animation, filename: gs.animation.filenames[0] }
+        delete body.filenames
+        return [gs.integration_patch, body].filter(Boolean)
+    }
 }
 function draw_train_stop(e: TrainStopPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => {
