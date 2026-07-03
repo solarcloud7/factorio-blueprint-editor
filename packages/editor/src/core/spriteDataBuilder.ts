@@ -1082,7 +1082,8 @@ function draw_cargo_bay(e: CargoBayPrototype): (data: IDrawData) => readonly Spr
 function draw_cargo_landing_pad(
     e: CargoLandingPadPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    throw new Error('Not implemented!')
+    // Same shape as space-platform-hub: picture is an array of layered sprites.
+    return () => (e.graphics_set as any).picture.flatMap((p: any) => p.layers ?? [p])
 }
 function draw_cargo_wagon(e: CargoWagonPrototype): (data: IDrawData) => readonly SpriteData[] {
     throw new Error('Not implemented!')

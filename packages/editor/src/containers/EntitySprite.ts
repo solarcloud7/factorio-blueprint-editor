@@ -123,6 +123,10 @@ export class EntitySprite extends Sprite {
                     (err as Error).message
                 })`
             )
+            // Tally placeholders so the render core can surface a per-render degraded count
+            // (X-Factograph-Degraded header). renderOne() resets this to 0 before each render.
+            ;(globalThis as any).__factographDegraded =
+                ((globalThis as any).__factographDegraded ?? 0) + 1
             return [EntitySprite.placeholder(entity, position)]
         }
     }
