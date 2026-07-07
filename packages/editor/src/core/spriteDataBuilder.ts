@@ -130,6 +130,11 @@ interface IDrawData {
     modules: (string | undefined)[]
 }
 
+export function positionVariation(pos: IPoint, variations: number): number {
+    const variationCount = Math.max(1, Math.floor(variations))
+    return Math.abs(Math.floor(pos.x) * 7 + Math.floor(pos.y) * 13) % variationCount
+}
+
 export interface ExtendedSpriteData extends SpriteData {
     anchorX?: number
     anchorY?: number
@@ -2139,7 +2144,7 @@ function draw_wall(e: WallPrototype): (data: IDrawData) => readonly SpriteData[]
                     wall,
                     'x',
                     'width',
-                    util.getRandomInt(0, wall.line_length)
+                    positionVariation(data.position, wall.line_length)
                 )
             )
 
@@ -2183,7 +2188,7 @@ function draw_wall(e: WallPrototype): (data: IDrawData) => readonly SpriteData[]
                     pictures.filling,
                     'x',
                     'width',
-                    util.getRandomInt(0, pictures.filling.line_length)
+                    positionVariation(data.position, pictures.filling.line_length)
                 )
                 filling = setProperty(filling, 'anchorX', 1.17)
                 sprites.push(filling)
