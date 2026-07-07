@@ -157,15 +157,17 @@ export class BlueprintContainer extends Container {
         this.tileSprites.enableRenderGroup()
         this.entitySprites.enableRenderGroup()
 
+        // FACTOGRAPH FORK: grid, chunkGrid and overlayContainer (editor chrome — the
+        // grey tile grid and cyan connection hints) are deliberately NOT added to the
+        // render tree. This is a headless sprite compositor: captures must contain game
+        // art on a transparent framebuffer, nothing else. The objects are still
+        // constructed above so editor code paths that reference them stay valid.
         this.addChild(
-            this.grid,
-            this.chunkGrid,
             this.tileSprites,
             this.tilePaintSlot,
             this.underlayContainer,
             this.entitySprites,
             this.wiresContainer,
-            this.overlayContainer,
             this.entityPaintSlot,
             this.wirePaintSlot
         )
@@ -681,10 +683,10 @@ export class BlueprintContainer extends Container {
     public set gridPattern(pattern: GridPattern) {
         BlueprintContainer._gridPattern = pattern
 
-        const index = this.getChildIndex(this.grid)
+        // FACTOGRAPH FORK: the grid is never in the render tree (see constructor), so
+        // regenerate the object without re-adding it.
         const old = this.grid
         this.grid = this.generateGrid()
-        this.addChildAt(this.grid, index)
         old.destroy()
     }
 
