@@ -1763,7 +1763,10 @@ function draw_proxy_container(
     throw new Error('Not implemented!')
 }
 function draw_pump(e: PumpPrototype): (data: IDrawData) => readonly SpriteData[] {
-    return (data: IDrawData) => [e.animations[util.getDirName(data.dir)]]
+    return (data: IDrawData) => {
+        const a = e.animations[util.getDirName(data.dir)]
+        return a.layers ?? [a]
+    }
 }
 function draw_radar(e: RadarPrototype): (data: IDrawData) => readonly SpriteData[] {
     return () => e.pictures.layers

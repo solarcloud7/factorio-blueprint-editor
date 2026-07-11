@@ -30,6 +30,19 @@ interface IEntityData {
     modules?: string[]
 }
 
+/** Count filename-less sprite data once for the entity that produced it. Shadow layers are
+ * intentionally skipped by the renderer and therefore are not degraded output. */
+export function countSilentSpriteDrops(
+    spriteData: readonly Array<ExtendedSpriteData | undefined>
+): void {
+    const dropped = spriteData.some(
+        data => !data || (!data.draw_as_shadow && !(data.filename ?? (data as any).filenames?.[0]))
+    )
+    if (!dropped) return
+    const counter = globalThis as any
+    if (typeof counter.__factographDegraded === 'number') counter.__factographDegraded += 1
+}
+
 export class EntitySprite extends Sprite {
     private static nextID = 0
 
@@ -238,6 +251,7 @@ export class EntitySprite extends Sprite {
             parts.push(sprite)
         }
 
+        countSilentSpriteDrops(spriteData)
         return parts
     }
 
