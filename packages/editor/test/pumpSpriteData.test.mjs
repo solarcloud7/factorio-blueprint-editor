@@ -5,31 +5,37 @@ import { test } from 'node:test'
 const builderSource = readFileSync(
     new URL('../src/core/spriteDataBuilder.ts', import.meta.url),
     'utf8'
-)
+).replaceAll('\r\n', '\n')
 const entitySpriteSource = readFileSync(
     new URL('../src/containers/EntitySprite.ts', import.meta.url),
     'utf8'
-)
+).replaceAll('\r\n', '\n')
+
+function extractFunctionBody(source, declaration) {
+    const start = source.indexOf(declaration)
+    assert.ok(start >= 0, `${declaration} should exist`)
+    const openingBrace = source.indexOf('{', start)
+    assert.ok(openingBrace >= 0, `${declaration} should have a body`)
+
+    let depth = 0
+    for (let index = openingBrace; index < source.length; index++) {
+        if (source[index] === '{') depth++
+        if (source[index] !== '}') continue
+        depth--
+        if (depth === 0) return source.slice(openingBrace + 1, index)
+    }
+    assert.fail(`${declaration} should have a balanced closing brace`)
+}
 
 function loadDrawPump() {
-    const start = builderSource.indexOf('function draw_pump')
-    const end = builderSource.indexOf('\nfunction draw_radar', start)
-    assert.ok(start >= 0 && end > start, 'draw_pump should exist')
-    const fnSource = builderSource.slice(start, end)
-    const body = fnSource.slice(fnSource.indexOf('{') + 1, fnSource.lastIndexOf('}'))
+    const body = extractFunctionBody(builderSource, 'function draw_pump')
     return new Function('util', 'e', `${body.replaceAll(': IDrawData', '')}\n`) // eslint-disable-line no-new-func
 }
 
 function loadSilentDropCounter() {
-    const start = entitySpriteSource.indexOf('export function countSilentSpriteDrops')
-    const end = entitySpriteSource.indexOf('\n\nexport class EntitySprite', start)
-    assert.ok(start >= 0 && end > start, 'countSilentSpriteDrops should be exported')
-    const fnSource = entitySpriteSource
-        .slice(start, end)
-        .replace(/export function countSilentSpriteDrops\([^)]*\): void \{/, '')
-        .replace(/\}\s*$/, '')
+    const body = extractFunctionBody(entitySpriteSource, 'export function countSilentSpriteDrops')
         .replaceAll(' as any', '')
-    return new Function('spriteData', fnSource) // eslint-disable-line no-new-func
+    return new Function('spriteData', body) // eslint-disable-line no-new-func
 }
 
 test('draw_pump returns body and shadow layers for every cardinal direction', () => {
