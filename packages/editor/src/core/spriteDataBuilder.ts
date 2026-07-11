@@ -1536,7 +1536,11 @@ function draw_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[]
         if (Object.entries(ps).length === 0) {
             ps = e.pictures[util.getDirName8Way(dir % 8)]
         }
-        return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
+        // Piece sets vary by rail kind (ground rails have ties; elevated rails have
+        // metals/backplates but NO ties) — absent pieces are deliberate, so filter them
+        // out here rather than pushing undefined into the sprite list (which the
+        // silent-drop counter rightly flags as degraded output).
+        return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals].filter(Boolean)
     }
 }
 function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[] {
@@ -1547,7 +1551,8 @@ function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly Spr
             if (Object.entries(ps).length === 0) {
                 ps = e.pictures[util.getDirName8Way(dir % 8)]
             }
-            return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
+            // Same deliberate-absence filter as draw_rail: elevated rails carry no ties.
+            return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals].filter(Boolean)
         }
 
         if (data.positionGrid && dir % 4 === 0) {
@@ -1885,7 +1890,9 @@ function draw_reactor(e: ReactorPrototype): (data: IDrawData) => readonly Sprite
             patchSheet = addToShift(conn.position, patchSheet)
             patches.push(patchSheet)
         }
-        return [...patches, e.lower_layer_picture, ...e.picture.layers]
+        // lower_layer_picture is optional (heating-tower, a 2.x reactor-type, has none) —
+        // deliberate absence, filtered so the silent-drop counter doesn't flag it.
+        return [...patches, e.lower_layer_picture, ...e.picture.layers].filter(Boolean)
     }
 }
 function draw_roboport(e: RoboportPrototype): (data: IDrawData) => readonly SpriteData[] {
