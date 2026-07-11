@@ -509,7 +509,15 @@ export function getEntitySize(e: EntityWithOwnerPrototype, dir: number = 0): IPo
     if (w === h) {
         return { x: w, y: h }
     } else {
-        if (e.type === 'curved-rail-a' || e.type === 'curved-rail-b') {
+        if (
+            e.type === 'curved-rail-a' ||
+            e.type === 'curved-rail-b' ||
+            e.type === 'elevated-curved-rail-a' ||
+            e.type === 'elevated-curved-rail-b'
+        ) {
+            // Elevated curved rails share the ground pieces' 8-way footprint behaviour;
+            // without this collapse their diagonal directions (2/6/10/14) fall through to
+            // the throw below — an HTTP-500-class crash before any sprite is drawn.
             dir = Math.floor((dir % 8) / 4) * 4
         }
         switch (dir) {

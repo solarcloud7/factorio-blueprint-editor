@@ -1081,8 +1081,16 @@ function draw_burner_generator(
     throw new Error('Not implemented!')
 }
 function draw_cargo_bay(e: CargoBayPrototype): (data: IDrawData) => readonly SpriteData[] {
-    // picture is an array of layered sprites (base + planet body + occluder).
-    return () => (e.graphics_set as any).picture.flatMap((p: any) => p.layers ?? [p])
+    // cargo-bay / space-platform-hub: picture is an ARRAY of layered sprites (base + planet body +
+    // occluder). The landing-pad-unloading-bay (also type cargo-bay) instead exposes a DIRECTIONAL
+    // object {north,east,south,west}, each an array of layered sprites — so pick the direction first,
+    // then flatMap. Wrapping the directional object in [p] (as first assumed) would yield a
+    // filename-less part and degrade to a placeholder, so branch on Array.isArray.
+    return (data: IDrawData) => {
+        const p = (e.graphics_set as any).picture
+        const pics = Array.isArray(p) ? p : p[util.getDirName(data.dir)]
+        return pics.flatMap((x: any) => x.layers ?? [x])
+    }
 }
 function draw_cargo_landing_pad(
     e: CargoLandingPadPrototype
@@ -1581,8 +1589,15 @@ function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly Spr
 function draw_lightning_attractor(
     e: LightningAttractorPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    // Same shape as accumulator: chargable_graphics.picture (lightning-rod / -collector).
-    return () => (e.chargable_graphics.picture as any).layers
+    // lightning-rod / -collector expose chargable_graphics.picture (same shape as accumulator).
+    // The fulgoran-ruin-attractor has NO picture — only charge_animation / discharge_animation — so
+    // fall back to those. charge_animation frame 0 is the mechanical default; which animation reads
+    // best is a human-eyes call (flagged for HITL). Unwrap with the established `.layers ?? [a]` idiom.
+    return () => {
+        const cg = e.chargable_graphics as any
+        const a = cg.picture ?? cg.charge_animation ?? cg.discharge_animation
+        return a.layers ?? [a]
+    }
 }
 function draw_linked_belt(e: LinkedBeltPrototype): (data: IDrawData) => readonly SpriteData[] {
     throw new Error('Not implemented!')
@@ -1692,26 +1707,37 @@ function draw_mining_drill(e: MiningDrillPrototype): (data: IDrawData) => readon
                 ]
             }
 
-        case 'electric-mining-drill':
-            return (data: IDrawData) => {
-                const dir = util.getDirName(data.dir)
-                const layers0 = e.graphics_set.animation[dir].layers
-
-                const animDir = `${dir}_animation` as
-                    | 'north-animation'
-                    | 'east-animation'
-                    | 'south-animation'
-                    | 'west-animation'
-
-                const layers1 = e.graphics_set.working_visualisations
-                    .filter(vis => vis.always_draw)
-                    .map(vis => vis[animDir])
-                    .filter(vis => !!vis)
-                    .flatMap(vis => (vis.layers ? vis.layers : [vis]))
-
-                return [...layers0, ...layers1]
-            }
     }
+
+    // Default: any mining-drill exposing the standard 2.x directional graphics_set.animation
+    // (electric-mining-drill, big-mining-drill, and modded drills of the same shape). Compose the
+    // per-direction base animation with its always_draw working visualisations — the composition the
+    // electric-mining-drill branch previously used explicitly, now the fallback for every such drill.
+    // Guard working_visualisations (drills without one still render their base animation). Throw
+    // loudly only when no known graphics shape matches, so a genuinely new shape is a visible crash
+    // rather than a silent placeholder.
+    if (e.graphics_set?.animation) {
+        return (data: IDrawData) => {
+            const dir = util.getDirName(data.dir)
+            const layers0 = e.graphics_set.animation[dir].layers
+
+            const animDir = `${dir}_animation` as
+                | 'north_animation'
+                | 'east_animation'
+                | 'south_animation'
+                | 'west_animation'
+
+            const layers1 = (e.graphics_set.working_visualisations ?? [])
+                .filter(vis => vis.always_draw)
+                .map(vis => vis[animDir])
+                .filter(vis => !!vis)
+                .flatMap(vis => (vis.layers ? vis.layers : [vis]))
+
+            return [...layers0, ...layers1]
+        }
+    }
+
+    throw new Error(`draw_mining_drill: unsupported graphics shape for '${e.name}'`)
 }
 function draw_offshore_pump(e: OffshorePumpPrototype): (data: IDrawData) => readonly SpriteData[] {
     return (data: IDrawData) => e.graphics_set.animation[util.getDirName(data.dir)].layers
