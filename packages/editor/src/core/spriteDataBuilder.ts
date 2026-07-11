@@ -1539,8 +1539,12 @@ function draw_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[]
         // Piece sets vary by rail kind (ground rails have ties; elevated rails have
         // metals/backplates but NO ties) — absent pieces are deliberate, so filter them
         // out here rather than pushing undefined into the sprite list (which the
-        // silent-drop counter rightly flags as degraded output).
-        return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals].filter(Boolean)
+        // silent-drop counter rightly flags as degraded output). Elevated pieces can also
+        // be layered wrappers (stone_path_background = {layers: [...]}) — unwrap with the
+        // established `p.layers ?? [p]` idiom.
+        return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
+            .filter(Boolean)
+            .flatMap(p => (p as any).layers ?? [p])
     }
 }
 function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[] {
@@ -1551,8 +1555,10 @@ function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly Spr
             if (Object.entries(ps).length === 0) {
                 ps = e.pictures[util.getDirName8Way(dir % 8)]
             }
-            // Same deliberate-absence filter as draw_rail: elevated rails carry no ties.
-            return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals].filter(Boolean)
+            // Same deliberate-absence filter + layered-wrapper unwrap as draw_rail.
+            return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
+                .filter(Boolean)
+                .flatMap(p => (p as any).layers ?? [p]) as SpriteVariations[]
         }
 
         if (data.positionGrid && dir % 4 === 0) {
