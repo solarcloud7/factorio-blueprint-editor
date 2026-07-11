@@ -1306,8 +1306,13 @@ function draw_gate(e: GatePrototype): (data: IDrawData) => readonly SpriteData[]
     }
 }
 function draw_generator(e: GeneratorPrototype): (data: IDrawData) => readonly SpriteData[] {
+    // 2.x moved the generator art out of vertical_animation/horizontal_animation into
+    // pictures.{north,east}.animation.layers (north = vertical orientation, east = horizontal).
+    // Only the two cardinal orientations exist. Keep the legacy fields as a fallback for pre-2.x data.
     return (data: IDrawData) =>
-        data.dir % 8 === 0 ? e.vertical_animation.layers : e.horizontal_animation.layers
+        data.dir % 8 === 0
+            ? e.pictures?.north?.animation?.layers ?? e.vertical_animation?.layers
+            : e.pictures?.east?.animation?.layers ?? e.horizontal_animation?.layers
 }
 function draw_heat_interface(
     e: HeatInterfacePrototype
@@ -1650,7 +1655,8 @@ function draw_locomotive(e: LocomotivePrototype): (data: IDrawData) => readonly 
 function draw_logistic_container(
     e: LogisticContainerPrototype
 ): (data: IDrawData) => readonly SpriteData[] {
-    return () => e.animation.layers
+    // 2.x moved the chest art out of the top-level animation into robot_door.animation.
+    return () => e.animation?.layers ?? e.robot_door.animation.layers
 }
 function draw_mining_drill(e: MiningDrillPrototype): (data: IDrawData) => readonly SpriteData[] {
     switch (e.name) {
@@ -1658,10 +1664,33 @@ function draw_mining_drill(e: MiningDrillPrototype): (data: IDrawData) => readon
             return (data: IDrawData) => e.graphics_set.animation[util.getDirName(data.dir)].layers
 
         case 'pumpjack':
-            return (data: IDrawData) => [
-                duplicateAndSetPropertyUsing(e.base_picture.sheets[0], 'x', 'width', data.dir / 4),
-                ...e.graphics_set.animation.north.layers,
-            ]
+            return (data: IDrawData) => {
+                // 2.x: the rotating base moved from base_picture.sheets into
+                // graphics_set.working_visualisations (always_draw, per-direction *_animation); the
+                // horsehead stayed in graphics_set.animation (north only). Compose like the
+                // electric-mining-drill branch, keeping a guarded base_picture fallback for legacy data.
+                const dir = util.getDirName(data.dir)
+                const animDir = `${dir}_animation` as
+                    | 'north_animation'
+                    | 'east_animation'
+                    | 'south_animation'
+                    | 'west_animation'
+                const head = (e.graphics_set.animation[dir] ?? e.graphics_set.animation.north).layers
+
+                if (e.graphics_set.working_visualisations) {
+                    const base = e.graphics_set.working_visualisations
+                        .filter(vis => vis.always_draw)
+                        .map(vis => vis[animDir])
+                        .filter(vis => !!vis)
+                        .flatMap(vis => (vis.layers ? vis.layers : [vis]))
+                    return [...base, ...head]
+                }
+
+                return [
+                    duplicateAndSetPropertyUsing(e.base_picture.sheets[0], 'x', 'width', data.dir / 4),
+                    ...head,
+                ]
+            }
 
         case 'electric-mining-drill':
             return (data: IDrawData) => {
