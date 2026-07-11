@@ -172,8 +172,10 @@ class Blueprint extends EventEmitter<BlueprintEvents> {
                     data.entities.map(e => {
                         const direction = (e.direction || 0) * dirMult
                         let position = util.sumprod(e.position, offset)
-                        // Approximate position of placeable_off_grid entities (i.e. landmines)
-                        if (FD.entities[e.name].flags.includes('placeable-off-grid')) {
+                        // Approximate position of placeable_off_grid entities (i.e. landmines).
+                        // Hidden 2.x entities carry no `flags` array; guard so a flags-less entity
+                        // (loader-1x1, hidden-electric-energy-interface) doesn't crash construction.
+                        if (FD.entities[e.name].flags?.includes('placeable-off-grid')) {
                             const e_size = getEntitySize(FD.entities[e.name])
                             const size = util.rotatePointBasedOnDir(
                                 [e_size.x / 2, e_size.y / 2],
@@ -817,7 +819,11 @@ function getOffset(data?: Partial<IBlueprint>): IPoint {
 
     if (data.entities) {
         for (const entity of data.entities) {
-            if (FD.entities[entity.name].flags.includes('placeable-off-grid')) continue
+            // Hidden entities (e.g. loader-1x1, hidden-electric-energy-interface) carry no `flags`
+            // array in 2.x data.json; an unguarded `.flags.includes` throws during Blueprint
+            // construction — an uncaught HTTP-500-class crash before any sprite is drawn. A flags-less
+            // entity is never placeable-off-grid, so treat a missing list as "not off-grid".
+            if (FD.entities[entity.name].flags?.includes('placeable-off-grid')) continue
 
             const dirMult = data.version < getFactorioVersion(2, 0, 0) ? 2 : 1
             const size = getEntitySize(FD.entities[entity.name], (entity.direction || 0) * dirMult)
