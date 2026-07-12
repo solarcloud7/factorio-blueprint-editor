@@ -212,6 +212,10 @@ export class EntityContainer {
         }
     }
 
+    public getRenderSprites(): readonly EntitySprite[] {
+        return [...this.entitySprites]
+    }
+
     public set cursorBox(type: keyof CursorBoxSpecification) {
         if (this.cursorBoxContainer) {
             this.cursorBoxContainer.destroy()

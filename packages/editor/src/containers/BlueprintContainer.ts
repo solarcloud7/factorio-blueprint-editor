@@ -36,6 +36,11 @@ export enum GridPattern {
     GRID = 'grid',
 }
 
+export interface IEntityRenderData {
+    origin: IPoint
+    sprites: readonly EntitySprite[]
+}
+
 type MoveDirections = {
     up: boolean
     left: boolean
@@ -820,6 +825,12 @@ export class BlueprintContainer extends Container {
         if (sort) {
             this.sortEntities()
         }
+    }
+
+    public getEntityRenderData(entityNumber: number): IEntityRenderData | undefined {
+        const entity = EntityContainer.mappings.get(entityNumber)
+        if (!entity) return undefined
+        return { origin: entity.position, sprites: entity.getRenderSprites() }
     }
 
     public addTileSprites(tileSprites: EntitySprite[]): void {
