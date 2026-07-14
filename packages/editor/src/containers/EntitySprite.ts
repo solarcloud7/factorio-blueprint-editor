@@ -126,15 +126,10 @@ export class EntitySprite extends Sprite {
         return this.nextID
     }
 
-    private static groundRailPrivateZIndex(renderBand: GroundRailRenderBand): number {
-        switch (renderBand) {
-            case 'ground-rail-underlay':
-                return -10
-            case 'ground-rail-structure':
-                return -9
-            case 'ground-rail-foreground':
-                return -7
-        }
+    private static groundRailPrivateZIndex(sourceIndex: number): number {
+        if (sourceIndex < 2) return -10
+        if (sourceIndex < 4) return -9
+        return -7
     }
 
     public static getParts(
@@ -231,7 +226,7 @@ export class EntitySprite extends Sprite {
             ) {
                 sprite.__zIndex = -8
             } else if (sprite.renderBand !== undefined) {
-                sprite.__zIndex = EntitySprite.groundRailPrivateZIndex(sprite.renderBand)
+                sprite.__zIndex = EntitySprite.groundRailPrivateZIndex(i)
             } else if (entity.type === 'transport-belt' || entity.type === 'heat-pipe') {
                 sprite.__zIndex = i === 0 ? -6 : -5
 

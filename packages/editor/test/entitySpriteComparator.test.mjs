@@ -29,8 +29,8 @@ function extractMethodBody(source, declaration) {
 const renderBandGetter = new Function(
     extractMethodBody(entitySpriteSource, 'public get renderBand')
 )
-const bandToPrivateOrder = new Function(
-    'renderBand',
+const groundRailPrivateOrder = new Function(
+    'sourceIndex',
     extractMethodBody(entitySpriteSource, 'private static groundRailPrivateZIndex')
 )
 const compare = new Function(
@@ -43,22 +43,66 @@ function record(label, renderBand, y, sourceOrder, x, id) {
     return {
         label,
         renderBand: renderBandGetter.call({ _renderBand: renderBand }),
-        __zIndex: bandToPrivateOrder(renderBand),
+        __zIndex: groundRailPrivateOrder(sourceOrder),
         entityPos: { x, y },
         zOrder: sourceOrder,
         id,
     }
 }
 
-test('semantic bands sort underlay then structure then foreground', () => {
-    const sorted = [
-        record('foreground', 'ground-rail-foreground', 0, 0, 0, 1),
-        record('underlay', 'ground-rail-underlay', 0, 0, 0, 2),
-        record('structure', 'ground-rail-structure', 0, 0, 0, 3),
-    ].sort(compare)
-    assert.deepEqual(
-        sorted.map(item => item.label),
-        ['underlay', 'structure', 'foreground']
+function legacyStitchedLabels(partCount) {
+    const sourceOrders = Array.from({ length: partCount }, (_, sourceOrder) => sourceOrder)
+    const buckets = [
+        sourceOrders.filter(sourceOrder => sourceOrder < 2),
+        sourceOrders.filter(sourceOrder => sourceOrder >= 2 && sourceOrder < 4),
+        sourceOrders.filter(sourceOrder => sourceOrder >= 4),
+    ]
+    return buckets.flatMap(bucket => [
+        ...bucket.map(sourceOrder => `near-${sourceOrder}`),
+        ...bucket.map(sourceOrder => `far-${sourceOrder}`),
+    ])
+}
+
+test('ground rail private order stays stitched to legacy flattened source indices', () => {
+    const ordinaryBands = [
+        'ground-rail-underlay',
+        'ground-rail-underlay',
+        'ground-rail-structure',
+        'ground-rail-structure',
+        'ground-rail-foreground',
+    ]
+    const scenarios = [
+        { name: 'ordinary five-part rail', bands: ordinaryBands },
+        {
+            name: 'cardinal gate six-part rail',
+            bands: [...ordinaryBands, 'ground-rail-foreground'],
+        },
+        {
+            name: 'layered ten-part rail',
+            bands: ordinaryBands.flatMap(renderBand => [renderBand, renderBand]),
+        },
+    ]
+
+    for (const { name, bands } of scenarios) {
+        const stitched = [
+            ...bands.map((renderBand, sourceOrder) =>
+                record(`far-${sourceOrder}`, renderBand, 10, sourceOrder, 0, 100 + sourceOrder)
+            ),
+            ...bands.map((renderBand, sourceOrder) =>
+                record(`near-${sourceOrder}`, renderBand, 0, sourceOrder, 0, sourceOrder)
+            ),
+        ].reverse()
+
+        assert.deepEqual(
+            stitched.sort(compare).map(item => item.label),
+            legacyStitchedLabels(bands.length),
+            name
+        )
+    }
+
+    assert.match(
+        entitySpriteSource,
+        /else if \(sprite\.renderBand !== undefined\) \{\s*sprite\.__zIndex = EntitySprite\.groundRailPrivateZIndex\(i\)\s*\}/
     )
 })
 

@@ -8,12 +8,39 @@ const builderSource = readFileSync(
     'utf8'
 ).replaceAll('\r\n', '\n')
 
-function between(startMarker, endMarker) {
-    const start = builderSource.indexOf(startMarker)
-    const end = builderSource.indexOf(endMarker, start)
-    assert.ok(start >= 0 && end > start, `${startMarker} should exist before ${endMarker}`)
-    return builderSource.slice(start, end)
+function extractBalancedDeclaration(source, declaration, openCharacter, closeCharacter) {
+    const start = source.indexOf(declaration)
+    assert.ok(start >= 0, `${declaration} should exist`)
+    const opening = source.indexOf(openCharacter, start)
+    assert.ok(opening >= 0, `${declaration} should contain ${openCharacter}`)
+
+    let depth = 0
+    for (let index = opening; index < source.length; index++) {
+        if (source[index] === openCharacter) depth++
+        if (source[index] !== closeCharacter) continue
+        depth--
+        if (depth === 0) return source.slice(start, index + 1)
+    }
+
+    assert.fail(`${declaration} should have a balanced ${closeCharacter}`)
 }
+
+test('balanced extraction ignores neighboring names and nested braces', () => {
+    const normalizedSource = [
+        'function target() {',
+        "    const decoy = 'function next() {}'",
+        '    if (true) { return { nested: true } }',
+        '}',
+        'function next() {}',
+    ]
+        .join('\r\n')
+        .replaceAll('\r\n', '\n')
+
+    assert.equal(
+        extractBalancedDeclaration(normalizedSource, 'function target', '{', '}'),
+        normalizedSource.slice(0, normalizedSource.indexOf('\nfunction next'))
+    )
+})
 
 function stripTypes(source) {
     return source
@@ -31,13 +58,19 @@ function stripTypes(source) {
         .replaceAll(' as SpriteVariations[]', '')
 }
 
-const helperSource = stripTypes(between('const GROUND_RAIL_ENTITY_TYPES', '\nfunction draw_rail'))
+const helperSource = stripTypes(
+    [
+        extractBalancedDeclaration(builderSource, 'const GROUND_RAIL_ENTITY_TYPES', '(', ')'),
+        extractBalancedDeclaration(builderSource, 'function railPieceLayers', '{', '}'),
+        extractBalancedDeclaration(builderSource, 'function getRailBaseSprites', '{', '}'),
+    ].join('\n')
+)
 const { railPieceLayers, getRailBaseSprites } = new Function(
     `${helperSource}; return { railPieceLayers, getRailBaseSprites }`
 )()
 
 const straightSource = stripTypes(
-    between('function draw_straight_rail', '\nfunction draw_lightning_attractor')
+    extractBalancedDeclaration(builderSource, 'function draw_straight_rail', '{', '}')
 )
 const loadStraightRail = new Function(
     'util',
