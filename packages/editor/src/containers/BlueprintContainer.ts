@@ -38,6 +38,7 @@ export enum GridPattern {
 
 export interface IEntityRenderData {
     origin: IPoint
+    /** Composed sprites in stable source order; each sprite's array index is its public source order. */
     sprites: readonly EntitySprite[]
 }
 
