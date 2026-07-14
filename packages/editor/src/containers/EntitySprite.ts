@@ -10,7 +10,7 @@ import G from '../common/globals'
 import F from '../UI/controls/functions'
 import { Entity } from '../core/Entity'
 import { PositionGrid } from '../core/PositionGrid'
-import { getSpriteData, ExtendedSpriteData } from '../core/spriteDataBuilder'
+import { getSpriteData, ExtendedSpriteData, GroundRailRenderBand } from '../core/spriteDataBuilder'
 import { ColorWithAlpha, getColor } from '../core/factorioData'
 import { BlendMode } from 'factorio:prototype'
 
@@ -47,6 +47,7 @@ export class EntitySprite extends Sprite {
     private static nextID = 0
 
     private id: number
+    private readonly _renderBand: GroundRailRenderBand | undefined
     private __zIndex: number
     private zOrder: number
     private readonly entityPos: IPoint
@@ -59,6 +60,7 @@ export class EntitySprite extends Sprite {
         super(texture)
 
         this.id = EntitySprite.getNextID()
+        this._renderBand = data.renderBand
 
         const blend_mode = data.blend_mode || 'normal'
         const mapBlendMode = (blend_mode: BlendMode): BLEND_MODES => {
@@ -115,9 +117,19 @@ export class EntitySprite extends Sprite {
         return this
     }
 
+    public get renderBand(): GroundRailRenderBand | undefined {
+        return this._renderBand
+    }
+
     private static getNextID(): number {
         this.nextID += 1
         return this.nextID
+    }
+
+    private static groundRailPrivateZIndex(sourceIndex: number): number {
+        if (sourceIndex < 2) return -10
+        if (sourceIndex < 4) return -9
+        return -7
     }
 
     public static getParts(
@@ -213,21 +225,8 @@ export class EntitySprite extends Sprite {
                 i === 0
             ) {
                 sprite.__zIndex = -8
-            } else if (
-                entity.type === 'legacy-straight-rail' ||
-                entity.type === 'straight-rail' ||
-                entity.type === 'half-diagonal-rail' ||
-                entity.type === 'legacy-curved-rail' ||
-                entity.type === 'curved-rail-a' ||
-                entity.type === 'curved-rail-b'
-            ) {
-                if (i < 2) {
-                    sprite.__zIndex = -10
-                } else if (i < 4) {
-                    sprite.__zIndex = -9
-                } else {
-                    sprite.__zIndex = -7
-                }
+            } else if (sprite.renderBand !== undefined) {
+                sprite.__zIndex = EntitySprite.groundRailPrivateZIndex(i)
             } else if (entity.type === 'transport-belt' || entity.type === 'heat-pipe') {
                 sprite.__zIndex = i === 0 ? -6 : -5
 

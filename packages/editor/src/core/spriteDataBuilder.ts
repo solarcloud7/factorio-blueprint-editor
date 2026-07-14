@@ -135,7 +135,13 @@ export function positionVariation(pos: IPoint, variations: number): number {
     return Math.abs(Math.floor(pos.x) * 7 + Math.floor(pos.y) * 13) % variationCount
 }
 
+export type GroundRailRenderBand =
+    | 'ground-rail-underlay'
+    | 'ground-rail-structure'
+    | 'ground-rail-foreground'
+
 export interface ExtendedSpriteData extends SpriteData {
+    readonly renderBand?: GroundRailRenderBand
     anchorX?: number
     anchorY?: number
     squishY?: number
@@ -1529,7 +1535,38 @@ function draw_land_mine(e: LandMinePrototype): (data: IDrawData) => readonly Spr
 function draw_lane_splitter(e: LaneSplitterPrototype): (data: IDrawData) => readonly SpriteData[] {
     throw new Error('Not implemented!')
 }
-function draw_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[] {
+
+const GROUND_RAIL_ENTITY_TYPES = new Set([
+    'legacy-straight-rail',
+    'straight-rail',
+    'half-diagonal-rail',
+    'legacy-curved-rail',
+    'curved-rail-a',
+    'curved-rail-b',
+])
+
+function railPieceLayers(
+    entityType: string,
+    piece: any,
+    renderBand: GroundRailRenderBand
+): readonly ExtendedSpriteData[] {
+    if (!piece) return []
+    const layers = (piece.layers ?? [piece]) as readonly ExtendedSpriteData[]
+    if (!GROUND_RAIL_ENTITY_TYPES.has(entityType)) return layers
+    return layers.map(layer => ({ ...layer, renderBand }))
+}
+
+function getRailBaseSprites(entityType: string, pictures: any): readonly ExtendedSpriteData[] {
+    return [
+        ...railPieceLayers(entityType, pictures.stone_path_background, 'ground-rail-underlay'),
+        ...railPieceLayers(entityType, pictures.stone_path, 'ground-rail-underlay'),
+        ...railPieceLayers(entityType, pictures.ties, 'ground-rail-structure'),
+        ...railPieceLayers(entityType, pictures.backplates, 'ground-rail-structure'),
+        ...railPieceLayers(entityType, pictures.metals, 'ground-rail-foreground'),
+    ]
+}
+
+function draw_rail(e: RailPrototype): (data: IDrawData) => readonly ExtendedSpriteData[] {
     return (data: IDrawData) => {
         const dir = data.dir
         let ps = e.pictures[util.getDirName8Way(dir)]
@@ -1542,23 +1579,19 @@ function draw_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[]
         // silent-drop counter rightly flags as degraded output). Elevated pieces can also
         // be layered wrappers (stone_path_background = {layers: [...]}) — unwrap with the
         // established `p.layers ?? [p]` idiom.
-        return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
-            .filter(Boolean)
-            .flatMap(p => (p as any).layers ?? [p])
+        return getRailBaseSprites(e.type, ps)
     }
 }
-function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly SpriteData[] {
+function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly ExtendedSpriteData[] {
     return (data: IDrawData) => {
         const dir = data.dir
-        function getBaseSprites(): SpriteVariations[] {
+        function getBaseSprites(): readonly ExtendedSpriteData[] {
             let ps = e.pictures[util.getDirName8Way(dir)]
             if (Object.entries(ps).length === 0) {
                 ps = e.pictures[util.getDirName8Way(dir % 8)]
             }
             // Same deliberate-absence filter + layered-wrapper unwrap as draw_rail.
-            return [ps.stone_path_background, ps.stone_path, ps.ties, ps.backplates, ps.metals]
-                .filter(Boolean)
-                .flatMap(p => (p as any).layers ?? [p]) as SpriteVariations[]
+            return getRailBaseSprites(e.type, ps)
         }
 
         if (data.positionGrid && dir % 4 === 0) {
@@ -1581,14 +1614,18 @@ function draw_straight_rail(e: RailPrototype): (data: IDrawData) => readonly Spr
                 // Reverse rotate relative to mid point
                 .map(y => util.rotatePointBasedOnDir([0, y], (16 - dir) % 16))
                 // Map positions to SpriteData
-                .map(p =>
-                    addToShift(
-                        p,
-                        util.duplicate(
-                            dir % 8 === 0
-                                ? FD.entities.gate.horizontal_rail_base
-                                : FD.entities.gate.vertical_rail_base
-                        )
+                .flatMap(p =>
+                    railPieceLayers(
+                        e.type,
+                        addToShift(
+                            p,
+                            util.duplicate(
+                                dir % 8 === 0
+                                    ? FD.entities.gate.horizontal_rail_base
+                                    : FD.entities.gate.vertical_rail_base
+                            )
+                        ),
+                        'ground-rail-foreground'
                     )
                 )
 
